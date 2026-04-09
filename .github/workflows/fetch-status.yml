@@ -17,23 +17,42 @@ jobs:
 
       - name: Fetch status
         run: |
-          HTTP_CODE=$(curl -s -o /tmp/response.json -w "%{http_code}" \
+          set +e
+          HTTP_CODE=$(curl -sL -o /tmp/response.json -w "%{http_code}" \
             --max-time 30 \
-            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-            -H "Accept: application/json, text/plain, */*" \
+            --retry 2 \
+            --retry-delay 3 \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" \
+            -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,application/json,*/*;q=0.8" \
             -H "Accept-Language: en-US,en;q=0.9" \
-            -H "Referer: https://support.rockstargames.com/servicestatus" \
+            -H "Accept-Encoding: gzip, deflate, br" \
+            -H "Connection: keep-alive" \
+            -H "Sec-Fetch-Dest: document" \
+            -H "Sec-Fetch-Mode: navigate" \
+            -H "Sec-Fetch-Site: none" \
+            --compressed \
             "https://support.rockstargames.com/services/status.json")
+          CURL_EXIT=$?
+          set -e
 
+          echo "curl exit code: $CURL_EXIT"
           echo "HTTP status: $HTTP_CODE"
+
+          if [ "$CURL_EXIT" != "0" ]; then
+            echo "curl failed with exit code $CURL_EXIT - skipping update"
+            cat /tmp/response.json 2>/dev/null || echo "(no response body)"
+            exit 0
+          fi
 
           if [ "$HTTP_CODE" != "200" ]; then
             echo "Non-200 response - skipping update"
+            cat /tmp/response.json 2>/dev/null | head -c 500 || true
             exit 0
           fi
 
           if ! jq empty /tmp/response.json 2>/dev/null; then
             echo "Invalid JSON - skipping update"
+            head -c 500 /tmp/response.json || true
             exit 0
           fi
 
