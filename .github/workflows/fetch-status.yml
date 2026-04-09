@@ -1,0 +1,53 @@
+name: Fetch Rockstar Status
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch status
+        run: |
+          HTTP_CODE=$(curl -s -o /tmp/response.json -w "%{http_code}" \
+            --max-time 30 \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+            -H "Accept: application/json, text/plain, */*" \
+            -H "Accept-Language: en-US,en;q=0.9" \
+            -H "Referer: https://support.rockstargames.com/servicestatus" \
+            "https://support.rockstargames.com/services/status.json")
+
+          echo "HTTP status: $HTTP_CODE"
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "Non-200 response - skipping update"
+            exit 0
+          fi
+
+          if ! jq empty /tmp/response.json 2>/dev/null; then
+            echo "Invalid JSON - skipping update"
+            exit 0
+          fi
+
+          jq . /tmp/response.json > status.json
+          echo "Status fetched successfully"
+
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add status.json
+          if git diff --cached --quiet; then
+            echo "No changes detected"
+            exit 0
+          fi
+          git commit -m "Update status: $(date -u '+%Y-%m-%d %H:%M UTC')"
+          git push
